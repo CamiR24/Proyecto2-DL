@@ -5,10 +5,10 @@ Funciones reutilizables para crear entornos de Gymnasium/ALE,
 ejecutar agentes y grabar video de las partidas.
 
 Extendido a partir de la versión del Lab 5: crear_entorno ahora puede
-aplicar el pipeline de preprocesamiento estándar de DQN: grayscale, 
-resize a 84x84, frame skip, frame stacking, sin
+aplicar el pipeline de preprocesamiento estándar de DQN (Mnih et al.,
+2015) - grayscale, resize a 84x84, frame skip, frame stacking - sin
 perder la capacidad de RecordVideo de grabar el video en resolución
-completa y a la velocidad real.
+completa y a la velocidad real del juego.
 """
 
 import numpy as np
@@ -87,11 +87,11 @@ def crear_entorno(nombre_entorno, video_folder=None, episode_trigger=None,
         El entorno creado
     """
     if video_folder is not None:
-        #recordVideo necesita observaciones tipo imagen 
+        #recordVideo necesita observaciones tipo imagen (rgb_array).
         render_mode = render_mode or "rgb_array"
 
     if aplicar_preprocesamiento:
-        #frameskip=1 en gym.make, el skip real lo hace AtariPreprocessing.
+        #frameskip=1 en gym.make: el skip real lo hace AtariPreprocessing.
         kwargs["frameskip"] = 1
 
     env = gym.make(nombre_entorno, render_mode=render_mode, **kwargs)
@@ -100,8 +100,8 @@ def crear_entorno(nombre_entorno, video_folder=None, episode_trigger=None,
         if episode_trigger is None:
             episode_trigger = lambda episodio: True
 
-        #RecordVideo ANTES del preprocesamiento para que el
-        #video quede en resolución y velocidad completa, y el agente
+        #RecordVideo se coloca ANTES del preprocesamiento para que el
+        #video quede en resolución/velocidad completa, y el agente
         #reciba la observación preprocesada.
         env = gym.wrappers.RecordVideo(
             env,
@@ -149,6 +149,56 @@ def agente_aleatorio(observation, env):
         Acción muestreada aleatoriamente
     """
     return env.action_space.sample()
+
+
+class AgenteReglaSimple:
+    """
+    Agente heurístico simple para Space Invaders: dispara constantemente
+    mientras barre de un lado a otro de la pantalla, para cubrir la mayor
+    cantidad de columnas posible sin ningún tipo de aprendizaje ni
+    percepción del estado del juego.
+
+    Pensado como un SEGUNDO baseline, más informativo que el agente
+    aleatorio, para tener dos referencias distintas contra las cuales
+    comparar cada iteración de RL.
+
+    Es un objeto porque necesita recordar en qué dirección va y cuántos pasos 
+    lleva.
+    """
+
+    def __init__(self, pasos_por_tramo=25):
+        self.pasos_por_tramo = pasos_por_tramo
+        self.contador = 0
+        self.direccion = "RIGHT"
+        self._acciones = None  #se resuelve la primera vez que se llama
+
+    def _resolver_acciones(self, env):
+        #se resuelve dinámicamente, por si el conjunto de acciones cambia según full_action_space
+        significados = env.unwrapped.get_action_meanings()
+        self._acciones = {
+            "RIGHTFIRE": significados.index("RIGHTFIRE") if "RIGHTFIRE" in significados
+                         else significados.index("RIGHT"),
+            "LEFTFIRE": significados.index("LEFTFIRE") if "LEFTFIRE" in significados
+                        else significados.index("LEFT"),
+        }
+
+    def __call__(self, observation, env):
+        if self._acciones is None:
+            self._resolver_acciones(env)
+
+        if self.contador >= self.pasos_por_tramo:
+            self.contador = 0
+            self.direccion = "LEFT" if self.direccion == "RIGHT" else "RIGHT"
+
+        self.contador += 1
+        return self._acciones["RIGHTFIRE"] if self.direccion == "RIGHT" else self._acciones["LEFTFIRE"]
+
+    def reset(self):
+        """Reinicia el estado interno. Se llama automáticamente entre
+        episodios en correr_episodios/generar_video_agente si el agente
+        tiene este método."""
+        self.contador = 0
+        self.direccion = "RIGHT"
 
 
 def ejecutar_episodio(env, funcion_agente, max_steps=10000):
@@ -214,6 +264,8 @@ def correr_episodios(nombre_entorno, funcion_agente, n_episodios=10, max_steps=1
     metricas = []
     try:
         for episodio in range(n_episodios):
+            if hasattr(funcion_agente, "reset"):
+                funcion_agente.reset()  # reinicia agentes con estado (ej. AgenteReglaSimple)
             resultado_ep = ejecutar_episodio(env, funcion_agente, max_steps=max_steps)
             resultado_ep["episodio"] = episodio
             metricas.append(resultado_ep)
@@ -234,9 +286,10 @@ def generar_video_agente(nombre_entorno, funcion_agente, video_folder,
                           name_prefix, n_episodios=1, max_steps=10000,
                           **kwargs_entorno):
     """
-    Crea el entorno con grabación de video, ejecuta n_episodios completos 
-    con funcion_agente, cierra el entorno y retorna las rutas de los videos 
-    generados junto con las métricas de cada episodio.
+    Crea el entorno con grabación de video,
+    ejecuta n_episodios completos con funcion_agente, cierra el
+    entorno y retorna las rutas de los videos generados
+    junto con las métricas de cada episodio.
 
     Parámetros
     ----------
@@ -280,6 +333,8 @@ def generar_video_agente(nombre_entorno, funcion_agente, video_folder,
     metricas = []
     try:
         for episodio in range(n_episodios):
+            if hasattr(funcion_agente, "reset"):
+                funcion_agente.reset()  #reinicia agentes con estado 
             resultado_ep = ejecutar_episodio(env, funcion_agente, max_steps=max_steps)
             resultado_ep["episodio"] = episodio
             metricas.append(resultado_ep)
@@ -300,10 +355,18 @@ def generar_video_agente(nombre_entorno, funcion_agente, video_folder,
 
 
 if __name__ == "__main__":
-    #baseline con preprocesamiento activado (10 episodios, sin video)
+    print("Baseline 1: agente aleatorio")
     correr_episodios(
         nombre_entorno="ALE/SpaceInvaders-v5",
         funcion_agente=agente_aleatorio,
+        n_episodios=10,
+        aplicar_preprocesamiento=True,
+    )
+
+    print("\nBaseline 2: regla simple (dispara y barre la pantalla)")
+    correr_episodios(
+        nombre_entorno="ALE/SpaceInvaders-v5",
+        funcion_agente=AgenteReglaSimple(pasos_por_tramo=25),
         n_episodios=10,
         aplicar_preprocesamiento=True,
     )

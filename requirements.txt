@@ -1,0 +1,24 @@
+# Entorno y preprocesamiento Atari
+gymnasium[atari]==1.0.0
+ale-py==0.10.1
+opencv-python-headless==4.10.0.84
+
+# Deep Learning (arquitectura CNN, entrenamiento del agente)
+torch==2.4.1
+torchvision==0.19.1
+
+# Video del agente jugando (entregable del proyecto)
+imageio==2.35.1
+imageio-ffmpeg==0.5.1
+
+# Cómputo numérico y análisis de resultados
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.9.2
+
+# Registro de métricas por iteración (recomendación #5 del enunciado)
+tensorboard==2.18.0
+
+# Notebooks
+jupyter==1.1.1
+ipykernel==6.29.5

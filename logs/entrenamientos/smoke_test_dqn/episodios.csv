@@ -1,0 +1,6 @@
+episodio,paso_global,recompensa_real,pasos,epsilon,terminated,truncated
+0,134,20.0,134,0.8794,True,False
+1,307,55.0,173,0.7237,True,False
+2,676,75.0,369,0.39159999999999995,True,False
+3,775,5.0,99,0.3025,True,False
+4,862,0.0,87,0.22419999999999995,True,False

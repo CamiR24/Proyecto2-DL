@@ -201,7 +201,7 @@ class AgenteReglaSimple:
         self.direccion = "RIGHT"
 
 
-def ejecutar_episodio(env, funcion_agente, max_steps=10000):
+def ejecutar_episodio(env, funcion_agente, max_steps=10000, seed=None):
     """
     Ejecuta un episodio completo en el entorno usando la función de agente
     dada, hasta que termine, se trunque o se alcance max_steps.
@@ -223,9 +223,16 @@ def ejecutar_episodio(env, funcion_agente, max_steps=10000):
             "recompensa_total": float,  # retorno acumulado del episodio
             "terminated": bool,
             "truncated": bool,
+            seed : int, opcional
+                Semilla utilizada para reiniciar el entorno y el espacio de acciones.
+                Permite reproducir un episodio y comparar agentes bajo las mismas
+                condiciones iniciales.
         }
     """
-    observation, info = env.reset()
+    if seed is not None:
+        env.action_space.seed(seed)
+
+    observation, info = env.reset(seed=seed)
 
     pasos = 0
     recompensa_total = 0.0
@@ -243,11 +250,18 @@ def ejecutar_episodio(env, funcion_agente, max_steps=10000):
         "recompensa_total": recompensa_total,
         "terminated": terminated,
         "truncated": truncated,
+        "seed": seed,
     }
 
 
-def correr_episodios(nombre_entorno, funcion_agente, n_episodios=10, max_steps=10000,
-                      **kwargs_entorno):
+def correr_episodios(
+    nombre_entorno,
+    funcion_agente,
+    n_episodios=10,
+    max_steps=10000,
+    seed_base=None,
+    **kwargs_entorno,
+):
     """
     Corre n_episodios SIN grabar video y retorna las métricas
     de cada uno. Pensado para calcular el baseline con una muestra 
@@ -258,6 +272,10 @@ def correr_episodios(nombre_entorno, funcion_agente, n_episodios=10, max_steps=1
     -------
     metricas : list[dict]
         Una entrada por episodio, con la misma forma que ejecutar_episodio.
+    seed_base : int, opcional
+        Semilla inicial del experimento. El episodio i utiliza la semilla
+        seed_base + i, lo que permite reproducir los resultados y evaluar
+        diferentes agentes con las mismas semillas.
     """
     env = crear_entorno(nombre_entorno, video_folder=None, **kwargs_entorno)
 
@@ -265,8 +283,21 @@ def correr_episodios(nombre_entorno, funcion_agente, n_episodios=10, max_steps=1
     try:
         for episodio in range(n_episodios):
             if hasattr(funcion_agente, "reset"):
-                funcion_agente.reset()  # reinicia agentes con estado (ej. AgenteReglaSimple)
-            resultado_ep = ejecutar_episodio(env, funcion_agente, max_steps=max_steps)
+                funcion_agente.reset()
+
+            seed_episodio = (
+                seed_base + episodio
+                if seed_base is not None
+                else None
+            )
+
+            resultado_ep = ejecutar_episodio(
+                env=env,
+                funcion_agente=funcion_agente,
+                max_steps=max_steps,
+                seed=seed_episodio,
+            )
+
             resultado_ep["episodio"] = episodio
             metricas.append(resultado_ep)
     finally:

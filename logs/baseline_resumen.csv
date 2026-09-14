@@ -1,0 +1,3 @@
+agente,episodios,promedio,mediana,desviacion_estandar,minimo,maximo,pasos_promedio,episodios_terminados,episodios_truncados
+Aleatorio,30,165.67,137.5,99.26,35.0,485.0,524.03,30,0
+Regla simple,30,211.5,190.0,95.49,55.0,360.0,569.33,30,0

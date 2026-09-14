@@ -1,0 +1,61 @@
+agente,episodio,seed,recompensa_total,pasos,terminated,truncated,bloque_de_5
+Aleatorio,0,42,290.0,758,True,False,1
+Aleatorio,1,43,230.0,645,True,False,1
+Aleatorio,2,44,145.0,546,True,False,1
+Aleatorio,3,45,165.0,583,True,False,1
+Aleatorio,4,46,65.0,454,True,False,1
+Aleatorio,5,47,80.0,408,True,False,2
+Aleatorio,6,48,110.0,468,True,False,2
+Aleatorio,7,49,150.0,534,True,False,2
+Aleatorio,8,50,95.0,499,True,False,2
+Aleatorio,9,51,230.0,619,True,False,2
+Aleatorio,10,52,80.0,291,True,False,3
+Aleatorio,11,53,215.0,631,True,False,3
+Aleatorio,12,54,260.0,651,True,False,3
+Aleatorio,13,55,255.0,735,True,False,3
+Aleatorio,14,56,35.0,280,True,False,3
+Aleatorio,15,57,155.0,519,True,False,4
+Aleatorio,16,58,210.0,602,True,False,4
+Aleatorio,17,59,185.0,561,True,False,4
+Aleatorio,18,60,105.0,396,True,False,4
+Aleatorio,19,61,485.0,835,True,False,4
+Aleatorio,20,62,110.0,424,True,False,5
+Aleatorio,21,63,240.0,564,True,False,5
+Aleatorio,22,64,60.0,283,True,False,5
+Aleatorio,23,65,370.0,807,True,False,5
+Aleatorio,24,66,105.0,387,True,False,5
+Aleatorio,25,67,110.0,380,True,False,6
+Aleatorio,26,68,120.0,524,True,False,6
+Aleatorio,27,69,130.0,439,True,False,6
+Aleatorio,28,70,70.0,499,True,False,6
+Aleatorio,29,71,110.0,399,True,False,6
+Regla simple,0,42,240.0,726,True,False,1
+Regla simple,1,43,310.0,723,True,False,1
+Regla simple,2,44,190.0,463,True,False,1
+Regla simple,3,45,165.0,569,True,False,1
+Regla simple,4,46,180.0,570,True,False,1
+Regla simple,5,47,265.0,689,True,False,2
+Regla simple,6,48,230.0,638,True,False,2
+Regla simple,7,49,165.0,484,True,False,2
+Regla simple,8,50,65.0,443,True,False,2
+Regla simple,9,51,165.0,443,True,False,2
+Regla simple,10,52,130.0,390,True,False,3
+Regla simple,11,53,175.0,445,True,False,3
+Regla simple,12,54,300.0,749,True,False,3
+Regla simple,13,55,85.0,419,True,False,3
+Regla simple,14,56,330.0,639,True,False,3
+Regla simple,15,57,130.0,423,True,False,4
+Regla simple,16,58,335.0,718,True,False,4
+Regla simple,17,59,105.0,417,True,False,4
+Regla simple,18,60,360.0,768,True,False,4
+Regla simple,19,61,225.0,520,True,False,4
+Regla simple,20,62,345.0,787,True,False,5
+Regla simple,21,63,55.0,283,True,False,5
+Regla simple,22,64,320.0,752,True,False,5
+Regla simple,23,65,350.0,724,True,False,5
+Regla simple,24,66,190.0,577,True,False,5
+Regla simple,25,67,170.0,444,True,False,6
+Regla simple,26,68,115.0,491,True,False,6
+Regla simple,27,69,350.0,719,True,False,6
+Regla simple,28,70,215.0,623,True,False,6
+Regla simple,29,71,85.0,444,True,False,6

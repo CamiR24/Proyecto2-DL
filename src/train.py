@@ -245,9 +245,24 @@ def entrenar_dqn(
     directorio_modelos="../models",
     directorio_logs="../logs/entrenamientos",
     usar_double_dqn=False,
+    ruta_checkpoint_inicial=None,
 ):
     """
     Entrena un agente DQN y guarda métricas y checkpoints.
+
+    Si ruta_checkpoint_inicial no es None, en vez de empezar con pesos
+    aleatorios se cargan los pesos (online, target y optimizador) de
+    ese checkpoint, y el conteo de pasos continúa desde el paso en que
+    se guardó (en vez de reiniciar en 0). Útil para extender una
+    iteración anterior en vez de re-entrenarla desde cero -- por
+    ejemplo, si sospechas que el agente todavía no convergió con el
+    presupuesto de pasos original.
+
+    Nota: el replay buffer SIEMPRE arranca vacío al reanudar (las
+    experiencias anteriores no se guardan en el checkpoint), así que
+    los primeros config.inicio_entrenamiento pasos de la continuación
+    se dedican de nuevo a llenarlo antes de retomar las actualizaciones
+    de la red.
     """
     carpeta_modelo = (
         Path(directorio_modelos)
@@ -303,13 +318,50 @@ def entrenar_dqn(
         n_acciones=config.n_acciones
     ).to(device)
 
-    modelo_target = deepcopy(modelo_online).to(device)
-    modelo_target.eval()
-
     optimizador = torch.optim.Adam(
         modelo_online.parameters(),
         lr=config.learning_rate,
     )
+
+    paso_inicial = 0
+
+    if ruta_checkpoint_inicial is not None:
+        checkpoint_inicial = torch.load(
+            ruta_checkpoint_inicial,
+            map_location=device,
+            weights_only=True,
+        )
+
+        modelo_online.load_state_dict(
+            checkpoint_inicial["modelo_online_state_dict"]
+        )
+
+        optimizador.load_state_dict(
+            checkpoint_inicial["optimizador_state_dict"]
+        )
+
+        paso_inicial = checkpoint_inicial["paso"]
+
+        print(
+            f"Reanudando entrenamiento desde el paso "
+            f"{paso_inicial:,} (checkpoint: {ruta_checkpoint_inicial})"
+        )
+
+        if paso_inicial >= config.total_pasos:
+            raise ValueError(
+                f"config.total_pasos ({config.total_pasos:,}) debe ser "
+                f"mayor al paso del checkpoint cargado ({paso_inicial:,}) "
+                "para que la continuación tenga pasos nuevos que entrenar."
+            )
+
+    modelo_target = deepcopy(modelo_online).to(device)
+
+    if ruta_checkpoint_inicial is not None:
+        modelo_target.load_state_dict(
+            checkpoint_inicial["modelo_target_state_dict"]
+        )
+
+    modelo_target.eval()
 
     replay_buffer = ReplayBuffer(
         capacidad=config.capacidad_buffer,
@@ -331,7 +383,7 @@ def entrenar_dqn(
     modelo_online.train()
 
     try:
-        for paso in range(1, config.total_pasos + 1):
+        for paso in range(paso_inicial + 1, config.total_pasos + 1):
             epsilon = calcular_epsilon(paso, config)
 
             accion = seleccionar_accion(

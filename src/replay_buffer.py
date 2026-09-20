@@ -6,6 +6,7 @@ Buffer de repetición de experiencias para agentes DQN.
 
 import numpy as np
 import torch
+from collections import deque
 
 class SumTree:
     """
@@ -109,6 +110,119 @@ class SumTree:
 
         return indice_dato, prioridad
 
+class NStepAccumulator:
+    """
+    Convierte transiciones de un paso en transiciones n-step.
+
+    La recompensa acumulada es:
+
+        R_t = r_t + gamma*r_(t+1) + ... +
+              gamma**(n-1)*r_(t+n-1)
+    """
+
+    def __init__(
+        self,
+        n_step=3,
+        gamma=0.99,
+    ):
+        if n_step < 1:
+            raise ValueError(
+                "n_step debe ser al menos 1."
+            )
+
+        self.n_step = n_step
+        self.gamma = gamma
+        self.transiciones = deque()
+
+    def agregar(
+        self,
+        observacion,
+        accion,
+        recompensa,
+        siguiente_observacion,
+        finalizado,
+    ):
+        """
+        Agrega una transición de un paso y retorna una lista de
+        transiciones n-step listas para almacenar.
+        """
+
+        self.transiciones.append(
+            (
+                np.asarray(
+                    observacion,
+                    dtype=np.uint8,
+                ),
+                int(accion),
+                float(recompensa),
+                np.asarray(
+                    siguiente_observacion,
+                    dtype=np.uint8,
+                ),
+                bool(finalizado),
+            )
+        )
+
+        transiciones_generadas = []
+
+        if len(self.transiciones) >= self.n_step:
+            transiciones_generadas.append(
+                self._construir_transicion(
+                    cantidad=self.n_step
+                )
+            )
+
+            self.transiciones.popleft()
+
+        # Al finalizar, vaciar las transiciones restantes.
+        if finalizado:
+            while self.transiciones:
+                transiciones_generadas.append(
+                    self._construir_transicion(
+                        cantidad=len(self.transiciones)
+                    )
+                )
+
+                self.transiciones.popleft()
+
+        return transiciones_generadas
+
+    def _construir_transicion(self, cantidad):
+        recompensa_acumulada = 0.0
+
+        for desplazamiento in range(cantidad):
+            recompensa = self.transiciones[
+                desplazamiento
+            ][2]
+
+            recompensa_acumulada += (
+                self.gamma ** desplazamiento
+            ) * recompensa
+
+        observacion_inicial = self.transiciones[0][0]
+        accion_inicial = self.transiciones[0][1]
+
+        siguiente_observacion = self.transiciones[
+            cantidad - 1
+        ][3]
+
+        finalizado = self.transiciones[
+            cantidad - 1
+        ][4]
+
+        return (
+            observacion_inicial,
+            accion_inicial,
+            recompensa_acumulada,
+            siguiente_observacion,
+            finalizado,
+        )
+
+    def reset(self):
+        self.transiciones.clear()
+
+    def __len__(self):
+        return len(self.transiciones)
 
 class ReplayBuffer:
     def __init__(

@@ -20,6 +20,7 @@ from evaluation import evaluar_modelo
 from replay_buffer import (
     ReplayBuffer,
     PrioritizedReplayBuffer,
+    NStepAccumulator,
 )
 
 
@@ -33,6 +34,7 @@ class ConfigDQN:
     #entrenamiento
     total_pasos: int = 500_000
     gamma: float = 0.99
+    n_step: int = 1
     learning_rate: float = 1e-4
     batch_size: int = 32
     frecuencia_entrenamiento: int = 4
@@ -245,9 +247,13 @@ def actualizar_modelo(
 
         no_finalizados = (~finalizados).float()
 
+        descuento_n_step = (
+            config.gamma ** config.n_step
+        )
+
         targets = (
             recompensas
-            + config.gamma
+            + descuento_n_step
             * no_finalizados
             * siguientes_valores_q
         )
@@ -508,6 +514,16 @@ def entrenar_dqn(
 
         print("Replay buffer: uniforme")
 
+    acumulador_n_step = NStepAccumulator(
+        n_step=config.n_step,
+        gamma=config.gamma,
+    )
+
+    print(
+        f"Retorno utilizado: "
+        f"{config.n_step}-step"
+    )
+
     episodio = 0
     pasos_episodio = 0
     recompensa_real_episodio = 0.0
@@ -549,13 +565,32 @@ def entrenar_dqn(
                     recompensa_real
                 )
 
-            replay_buffer.agregar(
+            transiciones_n_step = acumulador_n_step.agregar(
                 observacion=observacion,
                 accion=accion,
                 recompensa=recompensa_entrenamiento,
                 siguiente_observacion=siguiente_observacion,
                 finalizado=finalizado,
             )
+
+            for transicion in transiciones_n_step:
+                (
+                    observacion_buffer,
+                    accion_buffer,
+                    recompensa_buffer,
+                    siguiente_observacion_buffer,
+                    finalizado_buffer,
+                ) = transicion
+
+                replay_buffer.agregar(
+                    observacion=observacion_buffer,
+                    accion=accion_buffer,
+                    recompensa=recompensa_buffer,
+                    siguiente_observacion=(
+                        siguiente_observacion_buffer
+                    ),
+                    finalizado=finalizado_buffer,
+                )
 
             recompensa_real_episodio += recompensa_real
             pasos_episodio += 1

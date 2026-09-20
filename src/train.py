@@ -17,7 +17,10 @@ from pathlib import Path
 
 from ale_utils import crear_entorno
 from evaluation import evaluar_modelo
-from replay_buffer import ReplayBuffer
+from replay_buffer import (
+    ReplayBuffer,
+    PrioritizedReplayBuffer,
+)
 
 
 @dataclass
@@ -39,6 +42,14 @@ class ConfigDQN:
 
     #replay buffer
     capacidad_buffer: int = 20_000
+
+    #prioritized experience replay
+    usar_per: bool = False
+    per_alpha: float = 0.6
+    per_beta_inicial: float = 0.4
+    per_beta_final: float = 1.0
+    per_pasos_beta: int = 500_000
+    per_epsilon: float = 1e-6
 
     #exploración epsilon-greedy
     epsilon_inicial: float = 1.0
@@ -83,6 +94,31 @@ def calcular_epsilon(paso, config):
 
     return epsilon
 
+def calcular_beta_per(paso, config):
+    """
+    Incrementa beta linealmente desde per_beta_inicial hasta
+    per_beta_final.
+
+    Conforme beta se acerca a 1, la corrección del sesgo producido
+    por el muestreo priorizado se vuelve más fuerte.
+    """
+
+    proporcion = min(
+        paso / config.per_pasos_beta,
+        1.0,
+    )
+
+    beta = (
+        config.per_beta_inicial
+        + proporcion
+        * (
+            config.per_beta_final
+            - config.per_beta_inicial
+        )
+    )
+
+    return beta
+
 
 def seleccionar_accion(
     modelo,
@@ -119,28 +155,65 @@ def actualizar_modelo(
     config,
     device,
     usar_double_dqn=False,
+    paso_global=0,
 ):
     """
-    Realiza una actualización del modelo utilizando un batch del
-    replay buffer.
+    Realiza una actualización del modelo.
 
-    Si usar_double_dqn=False, utiliza el target del DQN vanilla.
-    Si usar_double_dqn=True, separa la selección y evaluación de
-    la siguiente acción.
+    Es compatible con:
+    - ReplayBuffer uniforme.
+    - PrioritizedReplayBuffer.
+    - DQN vanilla.
+    - Double DQN.
     """
 
-    (
-        observaciones,
-        acciones,
-        recompensas,
-        siguientes_observaciones,
-        finalizados,
-    ) = replay_buffer.muestrear(
-        batch_size=config.batch_size,
-        device=device,
+    es_priorizado = getattr(
+        replay_buffer,
+        "es_priorizado",
+        False,
     )
 
-    #Q(s, a) para las acciones que realmente se ejecutaron
+    if es_priorizado:
+        beta = calcular_beta_per(
+            paso=paso_global,
+            config=config,
+        )
+
+        (
+            observaciones,
+            acciones,
+            recompensas,
+            siguientes_observaciones,
+            finalizados,
+            indices,
+            pesos_importancia,
+        ) = replay_buffer.muestrear(
+            batch_size=config.batch_size,
+            device=device,
+            beta=beta,
+        )
+    else:
+        (
+            observaciones,
+            acciones,
+            recompensas,
+            siguientes_observaciones,
+            finalizados,
+        ) = replay_buffer.muestrear(
+            batch_size=config.batch_size,
+            device=device,
+        )
+
+        indices = None
+        beta = None
+
+        pesos_importancia = torch.ones(
+            config.batch_size,
+            dtype=torch.float32,
+            device=device,
+        )
+
+    # Q(s, a) para las acciones ejecutadas.
     valores_q = modelo_online(observaciones)
 
     valores_q_acciones = valores_q.gather(
@@ -148,23 +221,22 @@ def actualizar_modelo(
         index=acciones.unsqueeze(1),
     ).squeeze(1)
 
-    #el target se calcula sin construir gradientes
+    # Calcular el target sin construir gradientes.
     with torch.no_grad():
         if usar_double_dqn:
-            #la red online selecciona la mejor acción
+            # La red online selecciona la acción.
             siguientes_acciones = (
                 modelo_online(siguientes_observaciones)
                 .argmax(dim=1, keepdim=True)
             )
 
-            #la red target evalúa la acción seleccionada
+            # La red target evalúa la acción seleccionada.
             siguientes_valores_q = (
                 modelo_target(siguientes_observaciones)
                 .gather(1, siguientes_acciones)
                 .squeeze(1)
             )
         else:
-            #DQN vanilla: la red target selecciona y evalúa
             siguientes_valores_q = (
                 modelo_target(siguientes_observaciones)
                 .max(dim=1)
@@ -180,11 +252,22 @@ def actualizar_modelo(
             * siguientes_valores_q
         )
 
-    #huber loss: menos sensible a errores extremos que MSE
-    perdida = torch.nn.functional.smooth_l1_loss(
-        valores_q_acciones,
-        targets,
+    errores_td = targets - valores_q_acciones
+
+    # Se necesita la pérdida individual de cada transición para
+    # multiplicarla por su peso de importancia.
+    perdidas_individuales = (
+        torch.nn.functional.smooth_l1_loss(
+            valores_q_acciones,
+            targets,
+            reduction="none",
+        )
     )
+
+    perdida = (
+        pesos_importancia
+        * perdidas_individuales
+    ).mean()
 
     optimizador.zero_grad()
     perdida.backward()
@@ -196,11 +279,44 @@ def actualizar_modelo(
 
     optimizador.step()
 
-    return {
+    # Las nuevas prioridades se calculan usando el error TD previo
+    # a la actualización de los parámetros.
+    if es_priorizado:
+        replay_buffer.actualizar_prioridades(
+            indices=indices,
+            errores_td=(
+                errores_td
+                .detach()
+                .cpu()
+                .numpy()
+            ),
+        )
+
+    metricas = {
         "loss": perdida.item(),
-        "q_promedio": valores_q_acciones.detach().mean().item(),
+        "q_promedio": (
+            valores_q_acciones
+            .detach()
+            .mean()
+            .item()
+        ),
         "target_promedio": targets.mean().item(),
+        "error_td_promedio": (
+            errores_td
+            .detach()
+            .abs()
+            .mean()
+            .item()
+        ),
     }
+
+    if es_priorizado:
+        metricas["beta_per"] = beta
+        metricas["peso_importancia_promedio"] = (
+            pesos_importancia.mean().item()
+        )
+
+    return metricas
 
 def _agregar_fila_csv(ruta, fila):
     ruta = Path(ruta)
@@ -363,15 +479,34 @@ def entrenar_dqn(
 
     modelo_target.eval()
 
-    replay_buffer = ReplayBuffer(
-        capacidad=config.capacidad_buffer,
-        forma_observacion=(
-            config.stack_size,
-            config.screen_size,
-            config.screen_size,
-        ),
-        seed=config.seed,
+    forma_observacion = (
+        config.stack_size,
+        config.screen_size,
+        config.screen_size,
     )
+
+    if config.usar_per:
+        replay_buffer = PrioritizedReplayBuffer(
+            capacidad=config.capacidad_buffer,
+            forma_observacion=forma_observacion,
+            seed=config.seed,
+            alpha=config.per_alpha,
+            epsilon_per=config.per_epsilon,
+        )
+
+        print(
+            "Replay buffer: priorizado | "
+            f"alpha={config.per_alpha} | "
+            f"beta inicial={config.per_beta_inicial}"
+        )
+    else:
+        replay_buffer = ReplayBuffer(
+            capacidad=config.capacidad_buffer,
+            forma_observacion=forma_observacion,
+            seed=config.seed,
+        )
+
+        print("Replay buffer: uniforme")
 
     episodio = 0
     pasos_episodio = 0
@@ -439,6 +574,7 @@ def entrenar_dqn(
                     config=config,
                     device=device,
                     usar_double_dqn=usar_double_dqn,
+                    paso_global=paso,
                 )
 
             #actualización periódica de la red target
@@ -488,6 +624,19 @@ def entrenar_dqn(
                     "target_promedio": ultima_actualizacion[
                         "target_promedio"
                     ],
+                    "error_td_promedio": ultima_actualizacion[
+                        "error_td_promedio"
+                    ],
+                    "beta_per": ultima_actualizacion.get(
+                        "beta_per",
+                        None,
+                    ),
+                    "peso_importancia_promedio": (
+                        ultima_actualizacion.get(
+                            "peso_importancia_promedio",
+                            None,
+                        )
+                    ),
                     "epsilon": epsilon,
                     "tamano_buffer": len(replay_buffer),
                     "tiempo_segundos": tiempo_transcurrido,

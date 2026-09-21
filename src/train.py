@@ -596,8 +596,13 @@ def entrenar_dqn(
             pasos_episodio += 1
 
             #actualización de la red online
+            pasos_desde_reanudacion = (
+                paso - paso_inicial
+            )
+
             if (
-                paso >= config.inicio_entrenamiento
+                pasos_desde_reanudacion
+                >= config.inicio_entrenamiento
                 and paso % config.frecuencia_entrenamiento == 0
                 and len(replay_buffer) >= config.batch_size
             ):
@@ -614,7 +619,8 @@ def entrenar_dqn(
 
             #actualización periódica de la red target
             if (
-                paso >= config.inicio_entrenamiento
+                pasos_desde_reanudacion
+                >= config.inicio_entrenamiento
                 and paso
                 % config.frecuencia_actualizacion_target
                 == 0
